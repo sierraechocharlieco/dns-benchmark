@@ -6,7 +6,7 @@ Safety by design (do not change these defaults without good reason):
   - Queries run sequentially per resolver, never in parallel bursts.
   - A small, fixed delay (with jitter) separates every query.
   - A modest number of queries per resolver (a few dozen) is plenty to get
-    statistically useful latency/jitter numbers without looking anything
+    statistically useful latency numbers without looking anything
     like load testing.
   - Query order is interleaved across resolvers/domains so no single
     resolver receives a tight burst.
@@ -107,68 +107,42 @@ def run_benchmark(resolvers, domains, rounds, delay, timeout):
 def summarise(results: dict) -> list:
     rows = []
     for name, samples in results.items():
-        latencies = [lat for _, lat in samples if lat is not None]
-        n = len(samples)
+        latencies = sorted(lat for _, lat in samples if lat is not None)
         ok = len(latencies)
-        success_rate = ok / n if n else 0.0
-
         if latencies:
-            mean = statistics.mean(latencies)
             median = statistics.median(latencies)
-            stdev = statistics.pstdev(latencies) if ok > 1 else 0.0
-            p95 = sorted(latencies)[max(0, int(round(0.95 * (ok - 1))))]
-            lat_min = min(latencies)
-            lat_max = max(latencies)
+            p95 = latencies[round(0.95 * (ok - 1))]
         else:
-            mean = median = stdev = p95 = lat_min = lat_max = float("inf")
-
-        # Stability score: lower is better. Penalize jitter and failures.
-        # Failures are penalized heavily since they matter more than a few
-        # extra ms of jitter.
-        stability_score = stdev + (1 - success_rate) * 1000
-
+            median = p95 = float("inf")
         rows.append(
             {
                 "name": name,
-                "n": n,
-                "success_rate": success_rate,
-                "mean_ms": mean,
+                "success_rate": ok / len(samples) if samples else 0.0,
                 "median_ms": median,
-                "stdev_ms": stdev,
                 "p95_ms": p95,
-                "min_ms": lat_min,
-                "max_ms": lat_max,
-                "stability_score": stability_score,
             }
         )
     return rows
 
 
 def print_report(rows: list):
-    print("\n=== Ranked by speed (median latency, lower is better) ===")
+    print("\n=== Ranked by median latency (lower is better) ===")
     for r in sorted(rows, key=lambda r: r["median_ms"]):
+        if r["success_rate"] == 0:
+            print(f"  {r['name']:<12} all queries failed")
+            continue
+        success = f"success={r['success_rate'] * 100:5.1f}%"
+        warning = "  ⚠ failures" if r["success_rate"] < 1 else ""
         print(
-            f"  {r['name']:<12} median={r['median_ms']:7.1f} ms  "
-            f"mean={r['mean_ms']:7.1f} ms  p95={r['p95_ms']:7.1f} ms  "
-            f"success={r['success_rate'] * 100:5.1f}%"
-        )
-
-    print("\n=== Ranked by stability (jitter + failure penalty, lower is better) ===")
-    for r in sorted(rows, key=lambda r: r["stability_score"]):
-        print(
-            f"  {r['name']:<12} stdev={r['stdev_ms']:7.1f} ms  "
-            f"success={r['success_rate'] * 100:5.1f}%  "
-            f"score={r['stability_score']:7.1f}"
+            f"  {r['name']:<12} median={r['median_ms']:6.1f} ms  "
+            f"p95={r['p95_ms']:6.1f} ms  {success}{warning}"
         )
 
     fastest = min(rows, key=lambda r: r["median_ms"])
-    steadiest = min(rows, key=lambda r: r["stability_score"])
-    print(f"\nFastest:     {fastest['name']} ({fastest['median_ms']:.1f} ms median)")
-    print(
-        f"Most stable: {steadiest['name']} "
-        f"(jitter {steadiest['stdev_ms']:.1f} ms, "
-        f"success {steadiest['success_rate'] * 100:.1f}%)"
-    )
+    if fastest["success_rate"] == 0:
+        print("\nNo resolver answered any queries.")
+        return
+    print(f"\nFastest: {fastest['name']} ({fastest['median_ms']:.1f} ms median)")
 
 
 def write_csv(path: str, results: dict):

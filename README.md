@@ -2,9 +2,8 @@
 
 Measures the speed and stability of public DNS resolvers from your network.
 
-It sends a small number of `A` queries to each resolver, one at a time, and reports median,
-mean, and p95 latency, jitter, and success rate. It then ranks the resolvers by speed and by
-stability.
+It sends a small number of `A` queries to each resolver, one at a time, and ranks the resolvers
+by median latency, showing p95 latency and success rate alongside.
 
 ## Requirements
 
@@ -60,26 +59,25 @@ The CSV has one row per query with the columns `resolver`, `domain`, and `latenc
 ## Sample output
 
 ```text
-=== Ranked by speed (median latency, lower is better) ===
-  Google       median=   57.6 ms  mean=   57.6 ms  p95=   73.3 ms  success=100.0%
-  OpenDNS      median=  135.6 ms  mean=  135.6 ms  p95=  217.4 ms  success=100.0%
-  ...
+=== Ranked by median latency (lower is better) ===
+  Google       median=  57.6 ms  p95=  73.3 ms  success=100.0%
+  OpenDNS      median= 135.6 ms  p95= 217.4 ms  success=100.0%
+  Cloudflare   median= 227.1 ms  p95= 446.8 ms  success=100.0%
+  Quad9        median= 246.3 ms  p95= 443.5 ms  success=100.0%
 
-=== Ranked by stability (jitter + failure penalty, lower is better) ===
-  Google       stdev=   15.7 ms  success=100.0%  score=   15.7
-  OpenDNS      stdev=   81.8 ms  success=100.0%  score=   81.8
-  ...
-
-Fastest:     Google (57.6 ms median)
-Most stable: Google (jitter 15.7 ms, success 100.0%)
+Fastest: Google (57.6 ms median)
 ```
 
-## How results are calculated
+## Reading the results
 
-- **Speed** ranks resolvers by median latency of successful queries.
-- **Stability score** is the population standard deviation of latency plus
-  `(1 - success_rate) * 1000`. Each 1% of failed queries adds 10 points, so failures count
-  for more than a few milliseconds of jitter. Lower is better.
+- **median** is the typical lookup time. Resolvers are ranked by it.
+- **p95** is the lookup time that 95% of queries beat. A high p95 means occasional slow lookups.
+- **success** is the share of queries that got an answer before `--timeout`. Anything under
+  100% is marked `⚠ failures`. A failed lookup usually costs a second or more while the client
+  retries, so check this column before picking the fastest resolver.
+
+Median and p95 only count successful queries. A resolver that answered nothing is listed as
+`all queries failed` at the bottom.
 
 The default domains are large, popular sites that resolvers will already have cached. The
 results measure each resolver's response time from your network, not how fast it resolves
