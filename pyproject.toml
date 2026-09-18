@@ -1,0 +1,19 @@
+[project]
+name = "dns-benchmark"
+version = "0.1.0"
+description = "Measure the speed and stability of public DNS resolvers."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = ["dnspython==2.8.0"]
+
+[dependency-groups]
+dev = ["ruff==0.16.8", "ty==0.0.82"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
