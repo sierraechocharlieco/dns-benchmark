@@ -1,6 +1,6 @@
 # dns-benchmark
 
-Measures the speed and stability of public DNS resolvers from your network.
+Measures the speed and reliability of public DNS resolvers from your network.
 
 It sends a small number of `A` queries to each resolver, one at a time, and ranks the resolvers
 by median latency, showing p95 latency and success rate alongside.
@@ -28,12 +28,17 @@ By default this queries Cloudflare (`1.1.1.1`), Quad9 (`9.9.9.9`), Google (`8.8.
 OpenDNS (`208.67.222.222`). It sends 10 rounds per domain (240 queries in total), about 0.3 s
 apart, which takes about two minutes.
 
+The default domains are `google.com`, `cloudflare.com`, `wikipedia.org`, `github.com`,
+`stuff.co.nz` and `rnz.nz`. The last two are New Zealand sites. If you're elsewhere, pass
+`--domains` with sites you actually use, since resolvers far from a site's users may not have it
+cached.
+
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--resolvers` | the four above | Comma-separated `Name=IP` pairs |
-| `--domains` | built-in list | Comma-separated domains to query |
+| `--domains` | see above | Comma-separated domains to query |
 | `--rounds` | `10` | Queries per domain per resolver |
 | `--delay` | `0.3` | Base delay in seconds between queries, plus up to 50% random jitter |
 | `--timeout` | `2.0` | Per-query timeout in seconds |
@@ -72,8 +77,9 @@ Fastest: Google (57.6 ms median)
 
 - **median** is the typical lookup time. Resolvers are ranked by it.
 - **p95** is the lookup time that 95% of queries beat. A high p95 means occasional slow lookups.
-- **success** is the share of queries that got an answer before `--timeout`. Anything under
-  100% is marked `⚠ failures`. A failed lookup usually costs a second or more while the client
+- **success** is the share of queries that returned an `A` record before `--timeout`. Timeouts
+  and DNS errors (including names that don't exist) count as failures. Anything under 100% is
+  marked `⚠ failures`. A failed lookup usually costs a second or more while the client
   retries, so check this column before picking the fastest resolver.
 
 Median and p95 only count successful queries. A resolver that answered nothing is listed as
