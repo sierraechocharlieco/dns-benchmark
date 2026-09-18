@@ -12,10 +12,9 @@ Safety by design (do not change these defaults without good reason):
     resolver receives a tight burst.
 
 Usage:
-    pip install dnspython
-    python3 dns_benchmark.py
-    python3 dns_benchmark.py --rounds 20 --delay 0.4 --csv results.csv
-    python3 dns_benchmark.py --resolvers "Cloudflare=1.1.1.1,Quad9=9.9.9.9,Google=8.8.8.8,OpenDNS=208.67.222.222"
+    uv run dns_benchmark.py
+    uv run dns_benchmark.py --rounds 20 --delay 0.4 --csv results.csv
+    uv run dns_benchmark.py --resolvers "Cloudflare=1.1.1.1,Quad9=9.9.9.9,Google=8.8.8.8"
 """
 
 import argparse
@@ -26,13 +25,10 @@ import sys
 import time
 
 try:
-    import dns.resolver
     import dns.exception
+    import dns.resolver
 except ImportError:
-    sys.exit(
-        "Missing dependency 'dnspython'. Install it with:\n"
-        "    pip install dnspython"
-    )
+    sys.exit("Missing dependency 'dnspython'. Install it with:\n    uv sync")
 
 DEFAULT_RESOLVERS = {
     "Cloudflare": "1.1.1.1",
@@ -50,8 +46,8 @@ DEFAULT_DOMAINS = [
     "cloudflare.com",
     "wikipedia.org",
     "github.com",
-    "stuff.co.nz", 
-    "rnz.nz"
+    "stuff.co.nz",
+    "rnz.nz",
 ]
 
 
@@ -87,7 +83,7 @@ def run_benchmark(resolvers, domains, rounds, delay, timeout):
     results = {name: [] for name in resolvers}  # name -> list of (domain, latency_ms | None)
 
     jobs = []
-    for round_i in range(rounds):
+    for _ in range(rounds):
         for domain in domains:
             for name in resolvers:
                 jobs.append((name, domain))
@@ -98,8 +94,10 @@ def run_benchmark(resolvers, domains, rounds, delay, timeout):
         ip = resolvers[name]
         latency = query_once(ip, domain, timeout)
         results[name].append((domain, latency))
-        line = (f"[{i}/{total}] {name:<12} {domain:<16} "
-                f"{'timeout/fail' if latency is None else f'{latency:6.1f} ms'}")
+        line = (
+            f"[{i}/{total}] {name:<12} {domain:<16} "
+            f"{'timeout/fail' if latency is None else f'{latency:6.1f} ms'}"
+        )
         print(f"\r{line:<60}", end="", flush=True)
         time.sleep(delay + random.uniform(0, delay * 0.5))
     print()
@@ -129,40 +127,48 @@ def summarise(results: dict) -> list:
         # extra ms of jitter.
         stability_score = stdev + (1 - success_rate) * 1000
 
-        rows.append({
-            "name": name,
-            "n": n,
-            "success_rate": success_rate,
-            "mean_ms": mean,
-            "median_ms": median,
-            "stdev_ms": stdev,
-            "p95_ms": p95,
-            "min_ms": lat_min,
-            "max_ms": lat_max,
-            "stability_score": stability_score,
-        })
+        rows.append(
+            {
+                "name": name,
+                "n": n,
+                "success_rate": success_rate,
+                "mean_ms": mean,
+                "median_ms": median,
+                "stdev_ms": stdev,
+                "p95_ms": p95,
+                "min_ms": lat_min,
+                "max_ms": lat_max,
+                "stability_score": stability_score,
+            }
+        )
     return rows
 
 
 def print_report(rows: list):
     print("\n=== Ranked by speed (median latency, lower is better) ===")
     for r in sorted(rows, key=lambda r: r["median_ms"]):
-        print(f"  {r['name']:<12} median={r['median_ms']:7.1f} ms  "
-              f"mean={r['mean_ms']:7.1f} ms  p95={r['p95_ms']:7.1f} ms  "
-              f"success={r['success_rate']*100:5.1f}%")
+        print(
+            f"  {r['name']:<12} median={r['median_ms']:7.1f} ms  "
+            f"mean={r['mean_ms']:7.1f} ms  p95={r['p95_ms']:7.1f} ms  "
+            f"success={r['success_rate'] * 100:5.1f}%"
+        )
 
     print("\n=== Ranked by stability (jitter + failure penalty, lower is better) ===")
     for r in sorted(rows, key=lambda r: r["stability_score"]):
-        print(f"  {r['name']:<12} stdev={r['stdev_ms']:7.1f} ms  "
-              f"success={r['success_rate']*100:5.1f}%  "
-              f"score={r['stability_score']:7.1f}")
+        print(
+            f"  {r['name']:<12} stdev={r['stdev_ms']:7.1f} ms  "
+            f"success={r['success_rate'] * 100:5.1f}%  "
+            f"score={r['stability_score']:7.1f}"
+        )
 
     fastest = min(rows, key=lambda r: r["median_ms"])
     steadiest = min(rows, key=lambda r: r["stability_score"])
     print(f"\nFastest:     {fastest['name']} ({fastest['median_ms']:.1f} ms median)")
-    print(f"Most stable: {steadiest['name']} "
-          f"(jitter {steadiest['stdev_ms']:.1f} ms, "
-          f"success {steadiest['success_rate']*100:.1f}%)")
+    print(
+        f"Most stable: {steadiest['name']} "
+        f"(jitter {steadiest['stdev_ms']:.1f} ms, "
+        f"success {steadiest['success_rate'] * 100:.1f}%)"
+    )
 
 
 def write_csv(path: str, results: dict):
@@ -176,18 +182,34 @@ def write_csv(path: str, results: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--resolvers", default=None,
-                         help="Comma-separated Name=IP pairs, e.g. 'Cloudflare=1.1.1.1,Google=8.8.8.8'")
-    parser.add_argument("--domains", default=None,
-                         help="Comma-separated domains to query (defaults to a small fixed list)")
-    parser.add_argument("--rounds", type=int, default=10,
-                         help="Queries per domain per resolver (default: 10)")
-    parser.add_argument("--delay", type=float, default=0.3,
-                         help="Base delay in seconds between each query, jitter added on top (default: 0.3)")
-    parser.add_argument("--timeout", type=float, default=2.0,
-                         help="Per-query timeout in seconds (default: 2.0)")
-    parser.add_argument("--csv", default=None, help="Optional path to write raw per-query samples as CSV")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--resolvers",
+        default=None,
+        help="Comma-separated Name=IP pairs, e.g. 'Cloudflare=1.1.1.1,Google=8.8.8.8'",
+    )
+    parser.add_argument(
+        "--domains",
+        default=None,
+        help="Comma-separated domains to query (defaults to a small fixed list)",
+    )
+    parser.add_argument(
+        "--rounds", type=int, default=10, help="Queries per domain per resolver (default: 10)"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.3,
+        help="Base delay in seconds between each query, jitter added on top (default: 0.3)",
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=2.0, help="Per-query timeout in seconds (default: 2.0)"
+    )
+    parser.add_argument(
+        "--csv", default=None, help="Optional path to write raw per-query samples as CSV"
+    )
     args = parser.parse_args()
 
     resolvers = parse_resolvers(args.resolvers) if args.resolvers else DEFAULT_RESOLVERS
@@ -197,9 +219,11 @@ def main():
     est_seconds = total_queries * (args.delay * 1.25)
     print(f"Resolvers: {resolvers}")
     print(f"Domains:   {domains}")
-    print(f"Plan: {args.rounds} rounds x {len(domains)} domains x {len(resolvers)} resolvers "
-          f"= {total_queries} total queries, spaced ~{args.delay}s apart "
-          f"(est. ~{est_seconds:.0f}s runtime)\n")
+    print(
+        f"Plan: {args.rounds} rounds x {len(domains)} domains x {len(resolvers)} resolvers "
+        f"= {total_queries} total queries, spaced ~{args.delay}s apart "
+        f"(est. ~{est_seconds:.0f}s runtime)\n"
+    )
 
     results = run_benchmark(resolvers, domains, args.rounds, args.delay, args.timeout)
     rows = summarise(results)
