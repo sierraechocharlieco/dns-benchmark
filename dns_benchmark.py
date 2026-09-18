@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-DNS resolver benchmark: measures speed and stability of public DNS providers.
+DNS resolver benchmark: measures speed and reliability of public DNS providers.
 
 Safety by design (do not change these defaults without good reason):
   - Queries run sequentially per resolver, never in parallel bursts.
   - A small, fixed delay (with jitter) separates every query.
-  - A modest number of queries per resolver (a few dozen) is plenty to get
+  - A modest number of queries per resolver (60 by default) is plenty to get
     statistically useful latency numbers without looking anything
     like load testing.
   - Query order is interleaved across resolvers/domains so no single
