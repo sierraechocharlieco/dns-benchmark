@@ -28,7 +28,7 @@ try:
     import dns.exception
     import dns.resolver
 except ImportError:
-    sys.exit("Missing dependency 'dnspython'. Install it with:\n    uv sync")
+    sys.exit("Missing dependency 'dnspython'. Run the script with:\n    uv run dns_benchmark.py")
 
 DEFAULT_RESOLVERS = {
     "Cloudflare": "1.1.1.1",
