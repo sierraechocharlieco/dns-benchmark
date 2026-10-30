@@ -104,6 +104,7 @@ don't have permission to query.
 ## Development
 
 ```sh
+uv run pytest
 uv run ruff check .
 uv run ruff format .
 uv run ty check

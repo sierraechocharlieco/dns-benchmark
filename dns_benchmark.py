@@ -19,6 +19,8 @@ Usage:
 
 import argparse
 import csv
+import ipaddress
+import math
 import random
 import statistics
 import sys
@@ -60,8 +62,25 @@ def parse_resolvers(spec: str) -> dict:
         if "=" not in entry:
             sys.exit(f"Bad --resolvers entry {entry!r}, expected Name=IP")
         name, ip = entry.split("=", 1)
-        resolvers[name.strip()] = ip.strip()
+        name = name.strip()
+        ip = ip.strip()
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            sys.exit(f"Bad --resolvers entry {entry!r}: {ip!r} is not a valid IP address")
+        if not name:
+            sys.exit(f"Bad --resolvers entry {entry!r}: missing resolver name")
+        resolvers[name] = ip
+    if not resolvers:
+        sys.exit("No resolvers given: --resolvers must contain at least one Name=IP pair")
     return resolvers
+
+
+def parse_domains(spec: str) -> list:
+    domains = [d.strip() for d in spec.split(",") if d.strip()]
+    if not domains:
+        sys.exit("No domains given: --domains must contain at least one domain")
+    return domains
 
 
 def query_once(server_ip: str, domain: str, timeout: float) -> float | None:
@@ -73,7 +92,9 @@ def query_once(server_ip: str, domain: str, timeout: float) -> float | None:
     start = time.perf_counter()
     try:
         resolver.resolve(domain, "A")
-    except dns.exception.DNSException:
+    except (dns.exception.DNSException, OSError):
+        # DNSException covers timeouts and DNS errors; OSError covers
+        # network-level failures (no route, interface down, socket errors).
         return None
     return (time.perf_counter() - start) * 1000.0
 
@@ -90,16 +111,22 @@ def run_benchmark(resolvers, domains, rounds, delay, timeout):
     random.shuffle(jobs)  # avoid any accidental bursty pattern per resolver
 
     total = len(jobs)
-    for i, (name, domain) in enumerate(jobs, 1):
-        ip = resolvers[name]
-        latency = query_once(ip, domain, timeout)
-        results[name].append((domain, latency))
-        line = (
-            f"[{i}/{total}] {name:<12} {domain:<16} "
-            f"{'timeout/fail' if latency is None else f'{latency:6.1f} ms'}"
+    try:
+        for i, (name, domain) in enumerate(jobs, 1):
+            ip = resolvers[name]
+            latency = query_once(ip, domain, timeout)
+            results[name].append((domain, latency))
+            line = (
+                f"[{i}/{total}] {name:<12} {domain:<16} "
+                f"{'timeout/fail' if latency is None else f'{latency:6.1f} ms'}"
+            )
+            print(f"\r{line:<60}", end="", flush=True)
+            time.sleep(delay + random.uniform(0, delay * 0.5))
+    except KeyboardInterrupt:
+        print(
+            f"\n\nInterrupted after {sum(len(v) for v in results.values())}/{total} queries; "
+            "reporting partial results."
         )
-        print(f"\r{line:<60}", end="", flush=True)
-        time.sleep(delay + random.uniform(0, delay * 0.5))
     print()
     return results
 
@@ -111,7 +138,7 @@ def summarise(results: dict) -> list:
         ok = len(latencies)
         if latencies:
             median = statistics.median(latencies)
-            p95 = latencies[round(0.95 * (ok - 1))]
+            p95 = latencies[min(math.ceil(0.95 * ok) - 1, ok - 1)]
         else:
             median = p95 = float("inf")
         rows.append(
@@ -126,6 +153,9 @@ def summarise(results: dict) -> list:
 
 
 def print_report(rows: list):
+    if not rows:
+        print("\nNo resolvers to benchmark.")
+        return
     print("\n=== Ranked by median latency (lower is better) ===")
     for r in sorted(rows, key=lambda r: r["median_ms"]):
         if r["success_rate"] == 0:
@@ -186,8 +216,15 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.rounds < 1:
+        sys.exit(f"--rounds must be at least 1, got {args.rounds}")
+    if args.delay < 0:
+        sys.exit(f"--delay must be >= 0, got {args.delay}")
+    if args.timeout <= 0:
+        sys.exit(f"--timeout must be > 0, got {args.timeout}")
+
     resolvers = parse_resolvers(args.resolvers) if args.resolvers else DEFAULT_RESOLVERS
-    domains = [d.strip() for d in args.domains.split(",")] if args.domains else DEFAULT_DOMAINS
+    domains = parse_domains(args.domains) if args.domains else DEFAULT_DOMAINS
 
     total_queries = len(resolvers) * len(domains) * args.rounds
     est_seconds = total_queries * (args.delay * 1.25)
